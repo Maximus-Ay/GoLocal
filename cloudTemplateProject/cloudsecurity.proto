@@ -8,11 +8,15 @@ package cloud;
 
 service UserService {
   rpc login (Request) returns (Response);
+  rpc get_status (Request) returns (Response); // For quota and simulation status
+  rpc upload_file (Request) returns (Response); // For initiating and completing a virtual upload
 }
 
 message Request {
   string login = 1;
-  string password = 2;
+  string password = 2; // only used for login
+  string file_name = 3; // NEW FIELD for file uploads
+  int64 file_size = 4;   // NEW FIELD for file uploads (in bytes)
 }
 
 message Response {

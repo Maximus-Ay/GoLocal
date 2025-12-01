@@ -3,7 +3,8 @@ import random
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from params import from_email, from_password
+# --- FIX: We must import app_password, not from_password ---
+from params import from_email, app_password 
 
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), 
@@ -22,7 +23,8 @@ def send_otp(to_email) -> str:
 
     # Create the email
     msg = MIMEMultipart()
-    msg['From'] = 'sasbergson@gmail.com'
+    # Use the variable here for consistency
+    msg['From'] = from_email 
     msg['To'] = to_email
     msg['Subject'] = subject
     
@@ -35,7 +37,10 @@ def send_otp(to_email) -> str:
             server.starttls()  # Upgrade the connection to a secure encrypted SSL/TLS connection
             print('[OK]')
             print(f"login to the server with {from_email} .........", end='')
-            server.login('sasbergson@gmail.com', 'tgnw azxw lfjr jsuz')
+            
+            # --- BUG FIX: Use variables from params.py for login ---
+            server.login(from_email, app_password)
+            
             print('[OK]')
             print(f"Sending OTP data to {to_email}  .........", end='')
             server.send_message(msg)
@@ -44,15 +49,3 @@ def send_otp(to_email) -> str:
             return f"OTP data sent to your email: {to_email} successfully!"
     except Exception as e:
         print(f"Failed to send email: {e}")
-
-if __name__ == '__main__':
-    credentials = {}
-    file_path = 'ids'
-    with open(file_path, 'r') as file:
-        for line in file:
-            username, password = line.strip().split(',')
-            credentials[username] = password
-
-    with open('credentials', 'w') as file:
-        for username, password in credentials.items():
-            file.write(f'{username},{hash_password(password)}\n')
