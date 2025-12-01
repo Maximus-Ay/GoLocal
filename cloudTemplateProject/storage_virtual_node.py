@@ -1,7 +1,7 @@
 import time
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Dict, List, Optional, Union, Tuple # Added Tuple
 from enum import Enum, auto
 import hashlib
 
@@ -10,16 +10,6 @@ class TransferStatus(Enum):
     IN_PROGRESS = auto()
     COMPLETED = auto()
     FAILED = auto()
-
-# --- NEW: User Dataclass for Quota Management ---
-@dataclass
-class User:
-    user_id: str
-    name: str
-    # Default 100MB Quota for initial testing (adjust this later, e.g., to 2*1024**3 for 2GB)
-    total_quota: int = 100 * 1024 * 1024 
-    used_quota: int = 0
-# --------------------------------------------------
 
 @dataclass
 class FileChunk:
@@ -34,7 +24,6 @@ class FileTransfer:
     file_id: str
     file_name: str
     total_size: int  # in bytes
-    user_id: str # <--- NEW: Associate transfer with a user
     chunks: List[FileChunk]
     status: TransferStatus = TransferStatus.PENDING
     created_at: float = time.time()
@@ -64,7 +53,7 @@ class StorageVirtualNode:
         
         # Data structures
         self.active_transfers: Dict[str, FileTransfer] = {}
-        self.stored_files: Dict[str, FileTransfer] = {} 
+        self.stored_files: Dict[str, int] = {} # {file_id: size_bytes}
         self.connections: Dict[str, int] = {} # {node_id: bandwidth_bps}
 
     def add_connection(self, target_node_id: str, bandwidth_mbps: int):
@@ -93,20 +82,18 @@ class StorageVirtualNode:
             for i in range(math.ceil(file_size/chunk_size))
         ]
 
-    def initiate_transfer(self, file_id: str, file_name: str, file_size: int, user_id: str) -> Optional[FileTransfer]:
+    def initiate_transfer(self, file_id: str, file_name: str, file_size: int) -> Optional[FileTransfer]:
         """Initializes a new transfer and allocates storage if target node"""
         
-        # Node capacity check (The network will handle user quota)
-        if self.used_storage + file_size > self.total_storage:
-            print(f"🛑 Node {self.node_id} Storage Full! Cannot accept file {file_id}.")
-            return None
+        # Check if enough storage is available (only required for target node)
+        # This implementation assumes the caller (network) handles pre-allocation if needed.
+        # For simplicity in this core file, we skip the storage check here.
         
         chunks = self._generate_chunks(file_id, file_size)
         transfer = FileTransfer(
             file_id=file_id,
             file_name=file_name,
             total_size=file_size,
-            user_id=user_id, # <--- Pass User ID
             chunks=chunks,
             status=TransferStatus.PENDING
         )
@@ -119,17 +106,17 @@ class StorageVirtualNode:
         file_id: str,
         chunk_id: int,
         source_node_id: str
-    ) -> Tuple[bool, float]: # <--- DES FIX: Now returns (Success Status, Time Spent)
+    ) -> Tuple[bool, float]: # Now returns (Success Status, Time Spent)
         """
         Simulates the transfer of a single file chunk to this node.
         Returns a tuple: (success: bool, time_spent: float)
         """
         self.total_requests_processed += 1
-        transfer_time = 0.0 
+        transfer_time = 0.0 # Initialize time spent
         
         if file_id not in self.active_transfers:
             self.failed_requests += 1
-            return (False, 0.0) 
+            return (False, 0.0) # MODIFIED
 
         transfer = self.active_transfers[file_id]
         
@@ -137,7 +124,7 @@ class StorageVirtualNode:
             chunk = next(c for c in transfer.chunks if c.chunk_id == chunk_id)
         except StopIteration:
             self.failed_requests += 1
-            return (False, 0.0)
+            return (False, 0.0) 
             
         # Get connection bandwidth
         connection_bandwidth = self.connections.get(source_node_id)
@@ -147,6 +134,8 @@ class StorageVirtualNode:
         
         # Calculate chunk size in bits
         chunk_size_bits = chunk.size * 8
+        
+        # Determine available bandwidth for this transfer (simplified: connection bandwidth)
         available_bandwidth = connection_bandwidth
         
         if available_bandwidth <= 0:
@@ -156,7 +145,7 @@ class StorageVirtualNode:
         # Calculate transfer time (in seconds)
         transfer_time = chunk_size_bits / available_bandwidth
         
-        # >>> CRITICAL DES CHANGE: REMOVED time.sleep(transfer_time) <<<
+        # >>> REMOVED time.sleep(transfer_time) <<<
         
         # Update node metrics (simulate network load for the duration)
         self.network_utilization = available_bandwidth
@@ -165,47 +154,48 @@ class StorageVirtualNode:
         chunk.status = TransferStatus.COMPLETED
         chunk.stored_node = self.node_id
         
-        # Update storage and transfer metrics
+        # Update storage
         self.used_storage += chunk.size
         self.total_data_transferred += chunk.size
         
-        # Check if file is complete (will be finalized by the Network)
+        # Check if file is complete
         if all(c.status == TransferStatus.COMPLETED for c in transfer.chunks):
             transfer.status = TransferStatus.COMPLETED
             transfer.completed_at = time.time()
-            self.stored_files[file_id] = transfer
+            self.stored_files[file_id] = transfer.total_size
+            
+            # Clean up active transfers if needed, but often kept for stats.
+            # For now, let the network clear it.
             
         # Reset network utilization right after the event
         self.network_utilization = 0
             
-        return (True, transfer_time) # <--- DES FIX: Return success and time spent
+        return (True, transfer_time) # Return success and time spent
 
-    def get_user_storage_on_node(self, user_id: str) -> int:
-        """Calculates the total storage used by a specific user on this node."""
-        return sum(
-            t.total_size 
-            for t in self.stored_files.values() 
-            if t.user_id == user_id
-        )
+    def retrieve_file(self, file_id: str) -> Optional[int]:
+        """Simulates file retrieval (not fully implemented in core logic)"""
+        if file_id in self.stored_files:
+            return self.stored_files[file_id]
+        return None
 
     def get_storage_utilization(self) -> Dict[str, Union[int, float, List[str]]]:
         """Get current storage utilization metrics"""
         return {
-            "used_bytes": self.used_storage,  # int
-            "total_bytes": self.total_storage,  # int
-            "utilization_percent": (self.used_storage / self.total_storage) * 100 if self.total_storage else 0,  # float
-            "files_stored": len(self.stored_files),  # int
-            "active_transfers": len(self.active_transfers)  # int
+            "used_bytes": self.used_storage,
+            "total_bytes": self.total_storage,
+            "utilization_percent": (self.used_storage / self.total_storage) * 100,
+            "files_stored": len(self.stored_files),
+            "active_transfers": len(self.active_transfers)
         }
 
     def get_network_utilization(self) -> Dict[str, Union[int, float, List[str]]]:
         """Get current network utilization metrics"""
         total_bandwidth_bps = self.bandwidth
         return {
-            "current_utilization_bps": self.network_utilization,  # float
-            "max_bandwidth_bps": total_bandwidth_bps,  # int
-            "utilization_percent": (self.network_utilization / total_bandwidth_bps) * 100 if total_bandwidth_bps else 0,  # float
-            "connections": list(self.connections.keys())  # List[str]
+            "current_utilization_bps": self.network_utilization,
+            "max_bandwidth_bps": total_bandwidth_bps,
+            "utilization_percent": (self.network_utilization / total_bandwidth_bps) * 100,
+            "connections": list(self.connections.keys())
         }
 
     def get_performance_metrics(self) -> Dict[str, int]:
@@ -213,5 +203,5 @@ class StorageVirtualNode:
         return {
             "total_requests_processed": self.total_requests_processed,
             "total_data_transferred_bytes": self.total_data_transferred,
-            "failed_transfers": self.failed_requests
+            "failed_requests": self.failed_requests
         }
