@@ -24,17 +24,21 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13\x63loudsecurity.proto\x12\x05\x63loud\"P\n\x07Request\x12\r\n\x05login\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\x12\x11\n\tfile_name\x18\x03 \x01(\t\x12\x11\n\tfile_size\x18\x04 \x01(\x03\"\x1a\n\x08Response\x12\x0e\n\x06result\x18\x01 \x01(\t2\x96\x01\n\x0bUserService\x12(\n\x05login\x12\x0e.cloud.Request\x1a\x0f.cloud.Response\x12-\n\nget_status\x12\x0e.cloud.Request\x1a\x0f.cloud.Response\x12.\n\x0bupload_file\x12\x0e.cloud.Request\x1a\x0f.cloud.Responseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13\x63loudsecurity.proto\x12\x05\x63loud\"?\n\rSignupRequest\x12\r\n\x05login\x18\x01 \x01(\t\x12\r\n\x05\x65mail\x18\x02 \x01(\t\x12\x10\n\x08password\x18\x03 \x01(\t\"1\n\x13VerificationRequest\x12\r\n\x05login\x18\x01 \x01(\t\x12\x0b\n\x03otp\x18\x02 \x01(\t\"v\n\x07Request\x12\r\n\x05login\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\x12\x16\n\tfile_name\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x16\n\tfile_size\x18\x04 \x01(\x03H\x01\x88\x01\x01\x42\x0c\n\n_file_nameB\x0c\n\n_file_size\"1\n\x08Response\x12\x0e\n\x06result\x18\x01 \x01(\t\x12\x15\n\rsession_token\x18\x02 \x01(\t2\x82\x02\n\x0bUserService\x12/\n\x06signup\x12\x14.cloud.SignupRequest\x1a\x0f.cloud.Response\x12(\n\x05login\x12\x0e.cloud.Request\x1a\x0f.cloud.Response\x12\x39\n\nverify_otp\x12\x1a.cloud.VerificationRequest\x1a\x0f.cloud.Response\x12-\n\nget_status\x12\x0e.cloud.Request\x1a\x0f.cloud.Response\x12.\n\x0bupload_file\x12\x0e.cloud.Request\x1a\x0f.cloud.Responseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'cloudsecurity_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_REQUEST']._serialized_start=30
-  _globals['_REQUEST']._serialized_end=110
-  _globals['_RESPONSE']._serialized_start=112
-  _globals['_RESPONSE']._serialized_end=138
-  _globals['_USERSERVICE']._serialized_start=141
-  _globals['_USERSERVICE']._serialized_end=291
+  _globals['_SIGNUPREQUEST']._serialized_start=30
+  _globals['_SIGNUPREQUEST']._serialized_end=93
+  _globals['_VERIFICATIONREQUEST']._serialized_start=95
+  _globals['_VERIFICATIONREQUEST']._serialized_end=144
+  _globals['_REQUEST']._serialized_start=146
+  _globals['_REQUEST']._serialized_end=264
+  _globals['_RESPONSE']._serialized_start=266
+  _globals['_RESPONSE']._serialized_end=315
+  _globals['_USERSERVICE']._serialized_start=318
+  _globals['_USERSERVICE']._serialized_end=576
 # @@protoc_insertion_point(module_scope)

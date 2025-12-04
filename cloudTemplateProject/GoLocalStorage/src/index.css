@@ -1,0 +1,18 @@
+/* Base styles for the React application */
+/* Using Tailwind CSS, this file mostly ensures the font and full-height layout */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', sans-serif;
+    /* This background color is overridden by the App component, but kept for consistency */
+    background-color: #f3f4f6;
+}
+
+/* Ensure the root element spans the full height */
+#root {
+    min-height: 100vh;
+}

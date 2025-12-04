@@ -1,24 +1,41 @@
-// generate the skeleton and stub classes
-// generate calculator_pb2.py and calculator_pb2_grpc.py.
-// python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. calculator.proto
-
 syntax = "proto3";
 
 package cloud;
 
-service UserService {
-  rpc login (Request) returns (Response);
-  rpc get_status (Request) returns (Response); // For quota and simulation status
-  rpc upload_file (Request) returns (Response); // For initiating and completing a virtual upload
+// Request for a new user registration.
+message SignupRequest {
+  string login = 1;
+  string email = 2; // New field for OTP delivery
+  string password = 3;
 }
 
+// NEW MESSAGE TYPE for OTP verification
+message VerificationRequest {
+  string login = 1;
+  string otp = 2;
+}
+
+// General Request structure, mostly for Login, Status, and Upload
 message Request {
   string login = 1;
   string password = 2; // only used for login
-  string file_name = 3; // NEW FIELD for file uploads
-  int64 file_size = 4;   // NEW FIELD for file uploads (in bytes)
+  optional string file_name = 3; // For file uploads
+  optional int64 file_size = 4;  // For file uploads (in bytes)
 }
 
 message Response {
   string result = 1;
+  string session_token = 2; // Returned upon successful OTP verification
+}
+
+service UserService {
+  // New RPC for user registration
+  rpc signup (SignupRequest) returns (Response); 
+  
+  // Login will now only trigger OTP send
+  rpc login (Request) returns (Response); 
+  
+  rpc verify_otp (VerificationRequest) returns (Response); 
+  rpc get_status (Request) returns (Response); 
+  rpc upload_file (Request) returns (Response); 
 }

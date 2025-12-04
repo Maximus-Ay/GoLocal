@@ -34,9 +34,19 @@ class UserServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.signup = channel.unary_unary(
+                '/cloud.UserService/signup',
+                request_serializer=cloudsecurity__pb2.SignupRequest.SerializeToString,
+                response_deserializer=cloudsecurity__pb2.Response.FromString,
+                _registered_method=True)
         self.login = channel.unary_unary(
                 '/cloud.UserService/login',
                 request_serializer=cloudsecurity__pb2.Request.SerializeToString,
+                response_deserializer=cloudsecurity__pb2.Response.FromString,
+                _registered_method=True)
+        self.verify_otp = channel.unary_unary(
+                '/cloud.UserService/verify_otp',
+                request_serializer=cloudsecurity__pb2.VerificationRequest.SerializeToString,
                 response_deserializer=cloudsecurity__pb2.Response.FromString,
                 _registered_method=True)
         self.get_status = channel.unary_unary(
@@ -54,22 +64,34 @@ class UserServiceStub(object):
 class UserServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
+    def signup(self, request, context):
+        """New RPC for user registration
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def login(self, request, context):
+        """Login will now only trigger OTP send
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def verify_otp(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def get_status(self, request, context):
-        """For quota and simulation status
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def upload_file(self, request, context):
-        """For initiating and completing a virtual upload
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -77,9 +99,19 @@ class UserServiceServicer(object):
 
 def add_UserServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'signup': grpc.unary_unary_rpc_method_handler(
+                    servicer.signup,
+                    request_deserializer=cloudsecurity__pb2.SignupRequest.FromString,
+                    response_serializer=cloudsecurity__pb2.Response.SerializeToString,
+            ),
             'login': grpc.unary_unary_rpc_method_handler(
                     servicer.login,
                     request_deserializer=cloudsecurity__pb2.Request.FromString,
+                    response_serializer=cloudsecurity__pb2.Response.SerializeToString,
+            ),
+            'verify_otp': grpc.unary_unary_rpc_method_handler(
+                    servicer.verify_otp,
+                    request_deserializer=cloudsecurity__pb2.VerificationRequest.FromString,
                     response_serializer=cloudsecurity__pb2.Response.SerializeToString,
             ),
             'get_status': grpc.unary_unary_rpc_method_handler(
@@ -104,6 +136,33 @@ class UserService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
+    def signup(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cloud.UserService/signup',
+            cloudsecurity__pb2.SignupRequest.SerializeToString,
+            cloudsecurity__pb2.Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def login(request,
             target,
             options=(),
@@ -119,6 +178,33 @@ class UserService(object):
             target,
             '/cloud.UserService/login',
             cloudsecurity__pb2.Request.SerializeToString,
+            cloudsecurity__pb2.Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def verify_otp(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cloud.UserService/verify_otp',
+            cloudsecurity__pb2.VerificationRequest.SerializeToString,
             cloudsecurity__pb2.Response.FromString,
             options,
             channel_credentials,
