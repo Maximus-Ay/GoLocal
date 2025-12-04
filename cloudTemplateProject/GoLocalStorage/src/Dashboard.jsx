@@ -44,12 +44,10 @@ const Dashboard = ({ username, onLogout }) => {
     { storage: 5, price: 50000, color: '#ff9800', popular: false }
   ];
   
-  // NOTE: The useEffect below is already present in your code. We will ensure fetchStorageStatus
-  // now calls the new dedicated quota endpoint for consistency.
   useEffect(() => {
     fetchStorageStatus();
     fetchUserFiles();
-  }, [username]); // Added dependency on username for a better practice
+  }, [username]);
 
   useEffect(() => {
     if (storageInfo.percentage >= 80 && !showStorageWarning) {
@@ -57,17 +55,12 @@ const Dashboard = ({ username, onLogout }) => {
     }
   }, [storageInfo.percentage, showStorageWarning]);
 
-  // =========================================================================
-  // MODIFIED FUNCTION: Fetches the quota from the Flask server's local memory
-  // =========================================================================
   const fetchStorageStatus = async () => {
     try {
-      // Call the new dedicated GET route to fetch the quota from the users_registry
       const response = await fetch(`${API_BASE_URL}/api/get-user-quota/${username}`);
 
       const data = await response.json();
       if (response.ok && !data.error) {
-        // Data is returned as: { used: <MB>, total: <MB> }
         const used = data.used;
         const total = data.total;
         
@@ -77,14 +70,12 @@ const Dashboard = ({ username, onLogout }) => {
           percentage: (used / total) * 100
         });
 
-        // If a file upload was blocked, check if the new total quota is sufficient
         if (showQuotaExceededModal && total > quotaExceededInfo.available) {
           setShowQuotaExceededModal(false);
         }
 
       } else {
         console.error('Failed to fetch storage status:', data.error || data.result);
-        // Fallback or error handling for initial load
       }
     } catch (error) {
       console.error('Failed to fetch storage status:', error);
@@ -101,11 +92,41 @@ const Dashboard = ({ username, onLogout }) => {
 
       const data = await response.json();
       if (response.ok && data.files) {
-        setFiles(data.files);
+        // Ensure files are sorted by timestamp (newest first)
+        const sortedFiles = data.files.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        setFiles(sortedFiles);
+      } else {
+         // Handle case where user might have no files
+         setFiles([]);
       }
     } catch (error) {
       console.error('Failed to fetch files:', error);
+      setFiles([]);
     }
+  };
+
+  /**
+   * Generates a unique file name by appending (1), (2), etc.
+   * if a file with the same name already exists in the current file list.
+   * @param {string} fileName The original file name.
+   * @returns {string} The unique file name.
+   */
+  const getUniqueFileName = (fileName) => {
+    const fileNameParts = fileName.split('.');
+    // Handle files without extensions
+    const ext = fileNameParts.length > 1 ? `.${fileNameParts.pop()}` : '';
+    const baseName = fileNameParts.join('.');
+    
+    let newName = fileName;
+    let count = 0;
+    
+    // Check if the file name already exists
+    while (files.some(f => f.name === newName)) {
+      count++;
+      newName = `${baseName} (${count})${ext}`;
+    }
+    
+    return newName;
   };
 
   const getTimeAgo = (timestamp) => {
@@ -140,6 +161,9 @@ const Dashboard = ({ username, onLogout }) => {
       return;
     }
 
+    // New Logic: Get a unique file name
+    const uniqueFileName = getUniqueFileName(file.name);
+
     setIsUploading(true);
     setUploadProgress(0);
 
@@ -161,7 +185,7 @@ const Dashboard = ({ username, onLogout }) => {
           command: 'upload_file',
           params: {
             username,
-            file_name: file.name,
+            file_name: uniqueFileName, // Use the unique name
             file_size_mb: fileSizeMB
           }
         })
@@ -173,17 +197,21 @@ const Dashboard = ({ username, onLogout }) => {
       const data = await response.json();
       
       if (response.ok && data.type !== 'ERROR') {
+        // Optimistic update, but fetchUserFiles is called shortly after for server truth
         const newFile = {
-          id: Date.now().toString(),
-          name: file.name,
+          // Use a unique ID based on the unique file name to prevent collision issues
+          id: `${username}-${uniqueFileName}-${Date.now()}`,
+          name: uniqueFileName,
           size: fileSizeMB.toFixed(2),
           timestamp: new Date().toISOString(),
-          extension: file.name.split('.').pop().toUpperCase()
+          extension: uniqueFileName.split('.').pop().toUpperCase()
         };
         setFiles(prev => [newFile, ...prev]);
         
-        setTimeout(() => {
-          fetchStorageStatus();
+        setTimeout(async () => {
+          // Fetch server data to ensure consistency and persistence
+          await fetchStorageStatus();
+          await fetchUserFiles();
           setIsUploading(false);
           setUploadProgress(0);
         }, 500);
@@ -209,38 +237,86 @@ const Dashboard = ({ username, onLogout }) => {
     }
   };
 
-  const saveFileRename = () => {
+  // Modified: Now calls backend API for persistence and re-fetches files
+  const saveFileRename = async () => {
     if (!newFileName.trim()) {
       alert('File name cannot be empty');
       return;
     }
-
-    setFiles(prev => prev.map(file => 
-      file.id === editingFile 
-        ? { ...file, name: newFileName, extension: newFileName.split('.').pop().toUpperCase() }
-        : file
-    ));
     
-    setEditingFile(null);
-    setNewFileName('');
+    const fileToRename = files.find(f => f.id === editingFile);
+    if (!fileToRename) return;
+
+    // Use the unique naming helper for the new name as well
+    const uniqueNewFileName = getUniqueFileName(newFileName);
+
+    try {
+        // ASSUMPTION: This endpoint must be implemented in web_client.py
+        const response = await fetch(`${API_BASE_URL}/api/rename-file`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                file_id: editingFile,
+                new_file_name: uniqueNewFileName
+            })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+            // Re-fetch the files list from the server to get the updated file list (persistence on refresh)
+            await fetchUserFiles();
+            
+            setEditingFile(null);
+            setNewFileName('');
+            alert(`✅ File renamed to "${uniqueNewFileName}" successfully.`);
+        } else {
+            alert(data.error || 'Failed to rename file on server. Ensure /api/rename-file is implemented.');
+        }
+    } catch (error) {
+        console.error('Rename error:', error);
+        alert('An error occurred during file renaming.');
+    }
   };
 
-  const handleDeleteFile = (fileId) => {
+  // Modified: Now calls backend API for persistence and re-fetches files/storage
+  const handleDeleteFile = async (fileId) => {
     const file = files.find(f => f.id === fileId);
     if (!file) return;
 
     if (!confirm(`Are you sure you want to delete "${file.name}"?`)) return;
-
-    // Update storage by reducing used space
-    const fileSizeMB = parseFloat(file.size);
-    setStorageInfo(prev => ({
-      ...prev,
-      used: Math.max(0, prev.used - fileSizeMB),
-      percentage: Math.max(0, ((prev.used - fileSizeMB) / prev.total) * 100)
-    }));
-
-    // Remove file from list
+    
+    // Optimistic UI update for immediate feedback (will be overwritten by fetch)
     setFiles(prev => prev.filter(f => f.id !== fileId));
+
+    try {
+        // ASSUMPTION: This endpoint must be implemented in web_client.py
+        const response = await fetch(`${API_BASE_URL}/api/delete-file`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                file_id: fileId, // Use unique file ID to delete the correct file
+                file_size_mb: parseFloat(file.size)
+            })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+            // Re-fetch data to reflect server-side changes (guaranteed persistence and consistency)
+            await fetchUserFiles();
+            await fetchStorageStatus();
+            alert(`✅ File "${file.name}" deleted successfully.`);
+        } else {
+            // Revert optimistic update if deletion fails
+            await fetchUserFiles(); 
+            alert(data.error || 'Failed to delete file on server. Ensure /api/delete-file is implemented.');
+        }
+    } catch (error) {
+        console.error('Deletion error:', error);
+        await fetchUserFiles(); // Revert on network error
+        alert('An error occurred during file deletion.');
+    }
   };
 
   const handleSelectPlan = (plan) => {
@@ -1094,7 +1170,7 @@ const Dashboard = ({ username, onLogout }) => {
           <div className="header-left">
             <Cloud size={30} />
             <div className="header-text">
-              <div className="header-brand">CloudSecure</div>
+              <div className="header-brand">GoLocal Storage</div>
               <div className="header-subtitle">Welcome back, {username}</div>
             </div>
           </div>
@@ -1320,7 +1396,7 @@ const Dashboard = ({ username, onLogout }) => {
               </div>
 
               <p className="modal-subtitle" style={{ marginBottom: '0' }}>
-                Please upgrade your plan to upload this file and continue using CloudSecure.
+                Please upgrade your plan to upload this file and continue using GoLocal Storage.
               </p>
 
               <div className="modal-actions">

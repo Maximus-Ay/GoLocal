@@ -104,11 +104,16 @@ def grpc_call_handler():
                 if username not in user_files:
                     user_files[username] = []
                 
+                file_name = params['file_name']
+                file_extension = file_name.split('.')[-1].upper() if '.' in file_name else 'FILE'
+
+                # Use the unique file name (guaranteed by frontend) as the file ID for consistency
                 user_files[username].append({
-                    'name': params['file_name'],
+                    'id': file_name,
+                    'name': file_name,
                     'size': f"{file_size_mb:.2f}",
                     'timestamp': datetime.now().isoformat(),
-                    'extension': params['file_name'].split('.')[-1].upper() if '.' in params['file_name'] else 'FILE'
+                    'extension': file_extension
                 })
                 
                 # Update user's used quota
@@ -154,42 +159,134 @@ def get_user_files():
         data = request.get_json()
         username = data.get('username')
         
+        # Returns files which now contain the 'id' field
         files = user_files.get(username, [])
         return jsonify({"files": files}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/request-storage', methods=['POST', 'OPTIONS'])
-def request_storage():
-    if request.method == 'OPTIONS':
-        return '', 200
-        
+# ==================== FILE MANAGEMENT ENDPOINTS ====================
+
+@app.route('/api/rename-file', methods=['POST'])
+def rename_file():
     try:
         data = request.get_json()
         username = data.get('username')
-        storage_gb = data.get('additional_storage_gb')
-        price = data.get('price')
+        # file_id is the original unique file name used as the identifier
+        old_file_id = data.get('file_id') 
+        new_file_name = data.get('new_file_name')
         
-        # Create a unique request ID
-        request_id = len(payment_requests) + 1
+        if not all([username, old_file_id, new_file_name]):
+            return jsonify({"error": "Missing parameters (username, file_id, new_file_name)"}), 400
+
+        if username not in user_files:
+            return jsonify({"error": "User has no files"}), 404
         
-        payment_requests.append({
-            'id': request_id,
-            'username': username,
-            'storage_gb': storage_gb,
-            'price': price,
-            'date': datetime.now().isoformat(),
-            'status': 'pending'
-        })
+        # Find and rename the file
+        found = False
+        for file in user_files[username]:
+            if file['id'] == old_file_id:
+                # Update the file object with the new name and re-generate the ID/Extension
+                file['name'] = new_file_name
+                file['id'] = new_file_name 
+                file['extension'] = new_file_name.split('.')[-1].upper() if '.' in new_file_name else 'FILE'
+                
+                # TODO: In production, you would call gRPC here to rename the file
+                
+                found = True
+                break
         
-        print(f"✅ Payment request received: {username} wants {storage_gb}GB for {price} XAF")
-        
-        return jsonify({"result": "Request submitted successfully"}), 200
+        if found:
+            print(f"🔄 File renamed: {old_file_id} -> {new_file_name} for user {username}")
+            return jsonify({"success": True, "message": f"File renamed to {new_file_name}"}), 200
+        else:
+            return jsonify({"error": f"File with ID {old_file_id} not found"}), 404
     except Exception as e:
-        print(f"❌ Error in request_storage: {str(e)}")
+        print(f"❌ Error in rename_file: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# ==================== USER QUOTA ENDPOINT (NEW) ====================
+@app.route('/api/delete-file', methods=['POST'])
+def delete_file():
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        # file_id is the unique file name
+        file_id = data.get('file_id') 
+        file_size_mb = data.get('file_size_mb') # Used to update quota
+        
+        if not all([username, file_id, file_size_mb is not None]):
+            return jsonify({"error": "Missing parameters (username, file_id, file_size_mb)"}), 400
+
+        if username not in user_files:
+            return jsonify({"error": "User has no files"}), 404
+        
+        initial_file_count = len(user_files[username])
+        
+        # Filter out the file to delete (matching by the unique ID)
+        user_files[username] = [file for file in user_files[username] if file['id'] != file_id]
+        
+        deleted_count = initial_file_count - len(user_files[username])
+        
+        if deleted_count > 0:
+            # Update user's used quota
+            if username in users_registry:
+                quota_to_reduce = file_size_mb / 1024
+                # Ensure used quota does not go below zero
+                users_registry[username]['used_quota_gb'] = max(0, users_registry[username]['used_quota_gb'] - quota_to_reduce)
+            
+            # TODO: In production, you would call gRPC here to delete the file
+            
+            print(f"🗑️ File deleted: {file_id} for user {username}. Quota reduced by {file_size_mb:.2f} MB.")
+            return jsonify({"success": True, "message": f"File {file_id} deleted successfully"}), 200
+        else:
+            return jsonify({"error": f"File with ID {file_id} not found"}), 404
+    except Exception as e:
+        print(f"❌ Error in delete_file: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ==================== STORAGE REQUEST ENDPOINT (FIXED) ====================
+
+@app.route('/api/request-storage', methods=['POST'])
+def request_storage():
+    """
+    Handles the request for additional storage from the Dashboard.jsx frontend.
+    Stores the request in the in-memory payment_requests list for admin approval.
+    """
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        additional_storage_gb = data.get('additional_storage_gb')
+        price = data.get('price')
+        payment_details = data.get('payment_details')
+        
+        if not all([username, additional_storage_gb, price, payment_details]):
+            return jsonify({"result": "Missing required fields for storage request"}), 400
+
+        # Create a unique ID for the request (simple timestamp-based for now)
+        request_id = f"PAY-{int(datetime.now().timestamp())}"
+        
+        new_request = {
+            "id": request_id,
+            "username": username,
+            "storage_gb": additional_storage_gb,
+            "price": price,
+            "payment_details": payment_details,
+            "timestamp": datetime.now().isoformat(),
+            "status": "pending"
+        }
+        
+        payment_requests.append(new_request)
+        
+        print(f"💳 New storage request received from {username}. ID: {request_id}")
+        
+        return jsonify({"result": "Payment request submitted successfully for admin approval", "request_id": request_id}), 200
+
+    except Exception as e:
+        print(f"❌ Error in request_storage: {str(e)}")
+        return jsonify({"result": "Internal server error during request submission.", "error": str(e)}), 500
+
+# ==================== USER QUOTA ENDPOINT ====================
 
 @app.route('/api/get-user-quota/<username>', methods=['GET'])
 def get_user_quota(username):
@@ -325,8 +422,11 @@ if __name__ == '__main__':
     print(f"🔗 gRPC Backend: {GRPC_SERVER_ADDRESS}")
     print(f"📋 Available Endpoints:")
     print(f"   - POST /api/grpc-call")
-    print(f"   - POST /api/request-storage")
-    print(f"   - GET  /api/get-user-quota/<username> (NEW)") # Added new route to console log
+    print(f"   - POST /api/request-storage    <- FIXED")
+    print(f"   - POST /api/rename-file")
+    print(f"   - POST /api/delete-file")
+    print(f"   - POST /api/get-user-files")
+    print(f"   - GET  /api/get-user-quota/<username>")
     print(f"   - GET  /api/admin/get-users")
     print(f"   - GET  /api/admin/get-payment-requests")
     print(f"   - POST /api/admin/approve-payment")
