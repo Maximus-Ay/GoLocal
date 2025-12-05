@@ -134,12 +134,16 @@ simulation_time += transfer_time
 
 ### 1. Backend (gRPC)
 ```bash
-
-`python cloud.py`
+python cloud.py
 ```
 
 ### 2. API Gateway (Flask)
-`python web_client.py`
+```bash
+python web_client.py
+```
+
 ### 3. Frontend
-`npm install`
-`npm run dev`
+```bash
+npm install
+npm run dev
+```
