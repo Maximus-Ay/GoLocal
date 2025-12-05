@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   Server, Users, Activity, Database, Plus, Power, PowerOff, 
   Trash2, CheckCircle, XCircle, LogOut, Settings, AlertCircle,
-  TrendingUp, HardDrive, Cpu, Wifi
+  TrendingUp, HardDrive, Cpu, Wifi, BarChart3, PieChart, Zap
 } from 'lucide-react';
 import CustomDialog from './CustomDialog';
 
 const API_BASE_URL = 'http://localhost:5000';
 
 const AdminDashboard = ({ username, onLogout }) => {
-  const [activeTab, setActiveTab] = useState('nodes');
+  const [activeTab, setActiveTab] = useState('overview');
   const [nodes, setNodes] = useState([
     {
       node_id: 'node1',
@@ -60,7 +60,6 @@ const AdminDashboard = ({ username, onLogout }) => {
     bandwidth: 1000
   });
 
-  // Dialog state
   const [dialog, setDialog] = useState({
     isOpen: false,
     title: '',
@@ -78,7 +77,7 @@ const AdminDashboard = ({ username, onLogout }) => {
       fetchUsers();
       fetchPaymentRequests();
       fetchNodesFromBackend();
-    }, 5000); // Refresh every 5 seconds to show chunk updates
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -87,7 +86,6 @@ const AdminDashboard = ({ username, onLogout }) => {
       const response = await fetch(`${API_BASE_URL}/api/admin/get-nodes`);
       const data = await response.json();
       if (response.ok && data.nodes) {
-        // Merge backend data with our local node data
         setNodes(prev => prev.map(node => {
           const backendNode = data.nodes.find(n => n.node_id === node.node_id);
           if (backendNode) {
@@ -172,7 +170,6 @@ const AdminDashboard = ({ username, onLogout }) => {
 
     setNodes(prev => [...prev, node]);
     
-    // Register node in backend
     fetch(`${API_BASE_URL}/api/admin/add-node`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -200,7 +197,6 @@ const AdminDashboard = ({ username, onLogout }) => {
       node.node_id === nodeId ? { ...node, active: !node.active } : node
     ));
     
-    // Update backend
     fetch(`${API_BASE_URL}/api/admin/toggle-node`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -218,7 +214,6 @@ const AdminDashboard = ({ username, onLogout }) => {
       onConfirm: () => {
         setNodes(prev => prev.filter(node => node.node_id !== nodeId));
         
-        // Update backend
         fetch(`${API_BASE_URL}/api/admin/delete-node`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -308,6 +303,20 @@ const AdminDashboard = ({ username, onLogout }) => {
       case 'critical': return '#f44336';
       default: return '#9e9e9e';
     }
+  };
+
+  const stats = {
+    totalNodes: nodes.length,
+    activeNodes: nodes.filter(n => n.active).length,
+    totalUsers: users.length,
+    pendingPayments: paymentRequests.length,
+    totalChunks: nodes.reduce((sum, n) => sum + (n.chunk_count || 0), 0),
+    totalStorage: nodes.reduce((sum, n) => sum + n.storage_capacity, 0),
+    usedStorage: nodes.reduce((sum, n) => sum + n.used_storage, 0),
+    totalBandwidth: nodes.reduce((sum, n) => sum + n.bandwidth, 0),
+    avgCpuUsage: nodes.length > 0 ? nodes.reduce((sum, n) => sum + n.cpu_usage, 0) / nodes.length : 0,
+    totalQuotaUsed: users.reduce((sum, u) => sum + (u.used_quota_gb || 0), 0),
+    totalQuotaAllocated: users.reduce((sum, u) => sum + (u.total_quota_gb || 0), 0)
   };
 
   return (
@@ -404,6 +413,143 @@ const AdminDashboard = ({ username, onLogout }) => {
           transform: translateY(-2px);
           box-shadow: 0 6px 20px rgba(33, 150, 243, 0.3);
         }
+
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 25px;
+          margin-bottom: 40px;
+        }
+
+        .stat-card {
+          background: white;
+          border-radius: 16px;
+          padding: 25px;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+          transition: all 0.3s ease;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .stat-card::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 4px;
+          background: var(--stat-color);
+        }
+
+        .stat-card:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        }
+
+        .stat-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 15px;
+        }
+
+        .stat-icon {
+          width: 50px;
+          height: 50px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--stat-bg);
+          color: var(--stat-color);
+        }
+
+        .stat-value {
+          font-size: 36px;
+          font-weight: 800;
+          color: #333;
+          line-height: 1;
+          margin-bottom: 8px;
+        }
+
+        .stat-label {
+          font-size: 14px;
+          color: #666;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .stat-trend {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 13px;
+          color: #4caf50;
+          margin-top: 10px;
+        }
+
+        .charts-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+          gap: 25px;
+          margin-bottom: 40px;
+        }
+
+        .chart-card {
+          background: white;
+          border-radius: 16px;
+          padding: 25px;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .chart-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: #333;
+          margin-bottom: 20px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .progress-bar-horizontal {
+          width: 100%;
+          height: 12px;
+          background: #f0f0f0;
+          border-radius: 6px;
+          overflow: hidden;
+          margin: 10px 0;
+        }
+
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #1976d2 0%, #2196f3 100%);
+          transition: width 0.5s ease;
+        }
+
+        .metric-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 0;
+          border-bottom: 1px solid #f0f0f0;
+        }
+
+        .metric-row:last-child {
+          border-bottom: none;
+        }
+
+        .metric-label {
+          font-size: 14px;
+          color: #666;
+        }
+
+        .metric-value {
+          font-size: 16px;
+          font-weight: 700;
+          color: #333;
+        }
         
         .nodes-grid {
           display: grid;
@@ -492,7 +638,7 @@ const AdminDashboard = ({ username, onLogout }) => {
         
         .stat-row:last-child { border-bottom: none; }
         
-        .stat-label {
+        .stat-label-row {
           display: flex;
           align-items: center;
           gap: 8px;
@@ -500,7 +646,7 @@ const AdminDashboard = ({ username, onLogout }) => {
           font-size: 14px;
         }
         
-        .stat-value {
+        .stat-value-row {
           font-weight: 700;
           color: #333;
           font-size: 15px;
@@ -669,6 +815,8 @@ const AdminDashboard = ({ username, onLogout }) => {
         @media (max-width: 768px) {
           .admin-header { flex-direction: column; gap: 15px; }
           .admin-content { padding: 20px; }
+          .stats-grid { grid-template-columns: 1fr; }
+          .charts-grid { grid-template-columns: 1fr; }
           .nodes-grid { grid-template-columns: 1fr; }
           table { font-size: 13px; }
         }
@@ -707,6 +855,13 @@ const AdminDashboard = ({ username, onLogout }) => {
         <div className="admin-content">
           <div className="tabs">
             <button 
+              className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
+              onClick={() => setActiveTab('overview')}
+            >
+              <BarChart3 size={18} />
+              Overview
+            </button>
+            <button 
               className={`tab ${activeTab === 'nodes' ? 'active' : ''}`}
               onClick={() => setActiveTab('nodes')}
             >
@@ -728,6 +883,175 @@ const AdminDashboard = ({ username, onLogout }) => {
               Payment Requests ({paymentRequests.length})
             </button>
           </div>
+
+          {activeTab === 'overview' && (
+            <div>
+              <div className="section-header">
+                <h2 className="section-title">System Overview</h2>
+              </div>
+
+              <div className="stats-grid">
+                <div className="stat-card" style={{ '--stat-color': '#2196f3', '--stat-bg': '#e3f2fd' }}>
+                  <div className="stat-header">
+                    <div>
+                      <div className="stat-value">{stats.activeNodes}/{stats.totalNodes}</div>
+                      <div className="stat-label">Active Nodes</div>
+                    </div>
+                    <div className="stat-icon">
+                      <Server size={24} />
+                    </div>
+                  </div>
+                  <div className="stat-trend">
+                    <TrendingUp size={16} />
+                    {((stats.activeNodes/stats.totalNodes) * 100).toFixed(0)}% operational
+                  </div>
+                </div>
+
+                <div className="stat-card" style={{ '--stat-color': '#4caf50', '--stat-bg': '#e8f5e9' }}>
+                  <div className="stat-header">
+                    <div>
+                      <div className="stat-value">{stats.totalUsers}</div>
+                      <div className="stat-label">Total Users</div>
+                    </div>
+                    <div className="stat-icon">
+                      <Users size={24} />
+                    </div>
+                  </div>
+                  <div className="stat-trend">
+                    <TrendingUp size={16} />
+                    All active
+                  </div>
+                </div>
+
+                <div className="stat-card" style={{ '--stat-color': '#ff9800', '--stat-bg': '#fff3e0' }}>
+                  <div className="stat-header">
+                    <div>
+                      <div className="stat-value">{stats.pendingPayments}</div>
+                      <div className="stat-label">Pending Payments</div>
+                    </div>
+                    <div className="stat-icon">
+                      <Activity size={24} />
+                    </div>
+                  </div>
+                  <div className="stat-trend">
+                    Requires action
+                  </div>
+                </div>
+
+                <div className="stat-card" style={{ '--stat-color': '#9c27b0', '--stat-bg': '#f3e5f5' }}>
+                  <div className="stat-header">
+                    <div>
+                      <div className="stat-value">{stats.totalChunks}</div>
+                      <div className="stat-label">Total Chunks</div>
+                    </div>
+                    <div className="stat-icon">
+                      <Database size={24} />
+                    </div>
+                  </div>
+                  <div className="stat-trend">
+                    <TrendingUp size={16} />
+                    Distributed storage
+                  </div>
+                </div>
+
+                <div className="stat-card" style={{ '--stat-color': '#f44336', '--stat-bg': '#ffebee' }}>
+                  <div className="stat-header">
+                    <div>
+                      <div className="stat-value">{stats.avgCpuUsage.toFixed(1)}%</div>
+                      <div className="stat-label">Avg CPU Usage</div>
+                    </div>
+                    <div className="stat-icon">
+                      <Cpu size={24} />
+                    </div>
+                  </div>
+                  <div className="stat-trend">
+                    <Zap size={16} />
+                    System performance
+                  </div>
+                </div>
+
+                <div className="stat-card" style={{ '--stat-color': '#00bcd4', '--stat-bg': '#e0f7fa' }}>
+                  <div className="stat-header">
+                    <div>
+                      <div className="stat-value">{(stats.usedStorage / stats.totalStorage * 100).toFixed(1)}%</div>
+                      <div className="stat-label">Storage Used</div>
+                    </div>
+                    <div className="stat-icon">
+                      <HardDrive size={24} />
+                    </div>
+                  </div>
+                  <div className="stat-trend">
+                    {stats.usedStorage} / {stats.totalStorage} GB
+                  </div>
+                </div>
+              </div>
+
+              <div className="charts-grid">
+                <div className="chart-card">
+                  <div className="chart-title">
+                    <PieChart size={20} />
+                    Storage Distribution
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Total Capacity</span>
+                    <span className="metric-value">{stats.totalStorage} GB</span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Used Storage</span>
+                    <span className="metric-value">{stats.usedStorage} GB</span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Available Storage</span>
+                    <span className="metric-value">{stats.totalStorage - stats.usedStorage} GB</span>
+                  </div>
+                  <div className="progress-bar-horizontal">
+                    <div className="progress-fill" style={{ width: `${(stats.usedStorage / stats.totalStorage) * 100}%` }}></div>
+                  </div>
+                </div>
+
+                <div className="chart-card">
+                  <div className="chart-title">
+                    <BarChart3 size={20} />
+                    User Quota Overview
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Total Allocated</span>
+                    <span className="metric-value">{stats.totalQuotaAllocated.toFixed(2)} GB</span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Total Used</span>
+                    <span className="metric-value">{stats.totalQuotaUsed.toFixed(2)} GB</span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Usage Rate</span>
+                    <span className="metric-value">{((stats.totalQuotaUsed / stats.totalQuotaAllocated) * 100).toFixed(1)}%</span>
+                  </div>
+                  <div className="progress-bar-horizontal">
+                    <div className="progress-fill" style={{ width: `${(stats.totalQuotaUsed / stats.totalQuotaAllocated) * 100}%`, background: 'linear-gradient(90deg, #4caf50 0%, #8bc34a 100%)' }}></div>
+                  </div>
+                </div>
+
+                <div className="chart-card">
+                  <div className="chart-title">
+                    <Wifi size={20} />
+                    Network Resources
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Total Bandwidth</span>
+                    <span className="metric-value">{stats.totalBandwidth} Mbps</span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Active Nodes</span>
+                    <span className="metric-value">{stats.activeNodes} nodes</span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">Average Uptime</span>
+                    <span className="metric-value">99.8%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {activeTab === 'nodes' && (
             <div>
@@ -770,49 +1094,49 @@ const AdminDashboard = ({ username, onLogout }) => {
 
                     <div className="node-stats">
                       <div className="stat-row">
-                        <div className="stat-label">
+                        <div className="stat-label-row">
                           <Cpu size={16} />
                           CPU
                         </div>
-                        <div className="stat-value">{node.cpu_capacity} vCPUs ({node.cpu_usage}%)</div>
+                        <div className="stat-value-row">{node.cpu_capacity} vCPUs ({node.cpu_usage}%)</div>
                       </div>
 
                       <div className="stat-row">
-                        <div className="stat-label">
+                        <div className="stat-label-row">
                           <Database size={16} />
                           Memory
                         </div>
-                        <div className="stat-value">{node.memory_capacity} GB</div>
+                        <div className="stat-value-row">{node.memory_capacity} GB</div>
                       </div>
 
                       <div className="stat-row">
-                        <div className="stat-label">
+                        <div className="stat-label-row">
                           <HardDrive size={16} />
                           Storage
                         </div>
-                        <div className="stat-value">
+                        <div className="stat-value-row">
                           {node.used_storage}/{node.storage_capacity} GB
                         </div>
                       </div>
 
                       <div className="stat-row">
-                        <div className="stat-label">
+                        <div className="stat-label-row">
                           <Wifi size={16} />
                           Bandwidth
                         </div>
-                        <div className="stat-value">{node.bandwidth} Mbps</div>
+                        <div className="stat-value-row">{node.bandwidth} Mbps</div>
                       </div>
 
                       <div className="stat-row">
-                        <div className="stat-label">
+                        <div className="stat-label-row">
                           <TrendingUp size={16} />
                           Uptime
                         </div>
-                        <div className="stat-value">{node.uptime}</div>
+                        <div className="stat-value-row">{node.uptime}</div>
                       </div>
 
                       <div className="stat-row">
-                        <div className="stat-label">
+                        <div className="stat-label-row">
                           <AlertCircle size={16} />
                           Health
                         </div>
@@ -825,10 +1149,10 @@ const AdminDashboard = ({ username, onLogout }) => {
                       </div>
 
                       <div className="stat-row" style={{ background: '#e3f2fd', margin: '10px -10px -10px', padding: '15px', borderRadius: '0 0 12px 12px' }}>
-                        <div className="stat-label" style={{ color: '#1565c0', fontWeight: 700 }}>
+                        <div className="stat-label-row" style={{ color: '#1565c0', fontWeight: 700 }}>
                           📦 File Chunks
                         </div>
-                        <div className="stat-value" style={{ color: '#1565c0', fontSize: '20px' }}>
+                        <div className="stat-value-row" style={{ color: '#1565c0', fontSize: '20px' }}>
                           {node.chunk_count || 0}
                         </div>
                       </div>

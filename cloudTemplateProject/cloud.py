@@ -8,19 +8,15 @@ import string
 from concurrent import futures
 from typing import Dict, Any, Optional
 
-# Import the newly modified simulation core components
 from storage_virtual_network import StorageVirtualNetwork
 from storage_virtual_node import StorageVirtualNode, User 
 
-# The following imports are from your uploaded files:
 import cloudsecurity_pb2
 import cloudsecurity_pb2_grpc
-from utils import send_otp, hash_password # Import hash_password now too!
+from utils import send_otp, hash_password
 
 # --- GLOBAL SIMULATION SETUP ---
-# Initialize the Simulation Network and Nodes
 NETWORK = StorageVirtualNetwork()
-# Node configurations (Node1: 1Gbps, Node2: 2Gbps)
 node1 = StorageVirtualNode("node1", cpu_capacity=4, memory_capacity=16, storage_capacity=500, bandwidth=1000)
 node2 = StorageVirtualNode("node2", cpu_capacity=8, memory_capacity=32, storage_capacity=1000, bandwidth=2000)
 NETWORK.add_node(node1)
@@ -30,23 +26,47 @@ NETWORK.connect_nodes("node1", "node2", bandwidth=1000)
 # Constants
 DEFAULT_SOURCE_NODE_ID = "node1"
 DEFAULT_TARGET_NODE_ID = "node2"
-DEFAULT_QUOTA_BYTES = 2 * 1024**3 # 2GB Default Quota
+DEFAULT_QUOTA_BYTES = 2 * 1024**3
 
-# A lock to ensure only one thread modifies the simulation state (NETWORK) at a time
 SIMULATION_LOCK = threading.Lock()
 
 # --- User Data & OTP Cache ---
-# Stores user credentials and profile information
 USERS_DB: Dict[str, Dict[str, str]] = {}
-# Stores OTP for validation: {username: otp}
 OTP_CACHE: Dict[str, str] = {}
-# Stores active sessions: {username: session_token}
 SESSION_TOKENS: Dict[str, str] = {}
 
 def generate_session_token(length=32) -> str:
     """Generates a random alphanumeric session token."""
     characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for i in range(length))
+
+def ensure_admin_user():
+    """Ensures the admin user exists with username 'Admin' and password 'Admin123'"""
+    admin_username = "Admin"
+    admin_email = "thedevelopermax@gmail.com"
+    admin_password = "Admin123"
+    
+    # Check if admin already exists in credentials.txt
+    admin_exists = False
+    if os.path.exists('credentials.txt'):
+        with open('credentials.txt', 'r') as f:
+            for line in f:
+                try:
+                    username, email, _ = line.strip().split(',')
+                    if username == admin_username:
+                        admin_exists = True
+                        break
+                except ValueError:
+                    continue
+    
+    # If admin doesn't exist, create it
+    if not admin_exists:
+        hashed_password = hash_password(admin_password)
+        with open('credentials.txt', 'a') as f:
+            f.write(f"{admin_username},{admin_email},{hashed_password}\n")
+        print(f"✅ Admin user created: {admin_username} / {admin_password}")
+    else:
+        print(f"ℹ️  Admin user already exists: {admin_username}")
 
 def load_users_from_credentials(file_path='credentials.txt'):
     """Loads initial users from a file and initializes their network quotas."""
@@ -57,9 +77,8 @@ def load_users_from_credentials(file_path='credentials.txt'):
                     username, email, hashed_password = line.strip().split(',')
                     USERS_DB[username] = {
                         'email': email,
-                        'password': hashed_password, # Stored as the bcrypt hash
+                        'password': hashed_password,
                     }
-                    # Initialize user in the network simulation with a default quota
                     if username not in NETWORK.users:
                         new_user = User(
                             user_id=username, 
@@ -72,14 +91,15 @@ def load_users_from_credentials(file_path='credentials.txt'):
                     print(f"Skipping malformed line in credentials.txt: {line.strip()}")
     else:
         print(f"Warning: credentials.txt not found. Starting with empty user database.")
-        
+
+# Ensure admin user exists before loading
+ensure_admin_user()
 load_users_from_credentials()
 
 # --- gRPC Service Implementation ---
 
 class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
     
-    # NEW: Handle user registration
     def signup(self, request, context):
         username = request.login
         email = request.email
@@ -94,7 +114,6 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
                 'email': email,
                 'password': hashed_password,
             }
-            # Add user to the virtual network
             new_user = User(
                 user_id=username, 
                 name=username, 
@@ -102,13 +121,11 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
             )
             NETWORK.add_user(new_user)
 
-            # Send OTP for initial verification/login
             otp = send_otp(email)
             OTP_CACHE[username] = otp
             
-            # Save the new user to credentials.txt immediately
             with open('credentials.txt', 'a') as f:
-                f.write(f"\n{username},{email},{hashed_password}")
+                f.write(f"{username},{email},{hashed_password}\n")
 
             return cloudsecurity_pb2.Response(
                 result=f"User '{username}' created successfully. OTP sent to {email}. Please use 'verify_otp' to continue."
@@ -131,7 +148,6 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
             return cloudsecurity_pb2.Response(result="Error: Invalid username or password.")
 
         try:
-            # Send OTP
             otp = send_otp(user_info['email'])
             OTP_CACHE[username] = otp
             return cloudsecurity_pb2.Response(
@@ -150,15 +166,13 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
             return cloudsecurity_pb2.Response(result="Error: No pending OTP verification for this user.")
 
         if OTP_CACHE[username] == otp_code:
-            # Generate and cache a session token
             session_token = generate_session_token()
             SESSION_TOKENS[username] = session_token
-            # Clear OTP as it's been used
             del OTP_CACHE[username]
 
             return cloudsecurity_pb2.Response(
                 result="OTP verified. Session created successfully.",
-                session_token=session_token # Return the token to the client
+                session_token=session_token
             )
         else:
             return cloudsecurity_pb2.Response(result="Error: Invalid OTP.")
@@ -173,7 +187,6 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
         quota_used = user.used_quota / 1024**2
         quota_total = user.total_quota / 1024**2
         
-        # Get overall network stats
         network_stats = NETWORK.get_network_stats()
         
         result_message = (
@@ -199,7 +212,6 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
         if not user:
             return cloudsecurity_pb2.Response(result=f"Error: User '{user_id}' not found.")
         
-        # 1. Quota Check
         if user.used_quota + file_size_bytes > user.total_quota:
             quota_used_mb = user.used_quota / 1024**2
             quota_total_mb = user.total_quota / 1024**2
@@ -210,11 +222,8 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
             upload_log.append(error_msg)
             return cloudsecurity_pb2.Response(result="\n".join(upload_log))
 
-        # 2. Initiate Transfer (acquires SIMULATION_LOCK inside)
         try:
             with SIMULATION_LOCK:
-                # The virtual file transfer initiation automatically checks storage capacity 
-                # and reserves the space and quota if successful.
                 transfer = NETWORK.initiate_file_transfer(
                     source_node_id=DEFAULT_SOURCE_NODE_ID,
                     target_node_id=DEFAULT_TARGET_NODE_ID,
@@ -224,7 +233,6 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
                 )
             
         except RuntimeError as e:
-            # Handle simulation errors (e.g., storage full, node not found)
             upload_log.append(f"Simulation Error during initiation: {str(e)}")
             return cloudsecurity_pb2.Response(result="\n".join(upload_log))
 
@@ -234,33 +242,24 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
 
         upload_log.append(f"Transfer ID: {transfer.file_id}")
         
-        # Get initial time for speed calculation
         initial_time = NETWORK.simulation_time
         
-        # 3. Simulate Transfer Progress until completion
         total_chunks = len(transfer.chunks)
         
         while True:
-            # The client blocks while the server simulates the transfer step-by-step
-            # This is the core of the virtual time progression
             with SIMULATION_LOCK:
                 chunks_done, completed = NETWORK.process_file_transfer(
                     source_node_id=DEFAULT_SOURCE_NODE_ID,
                     target_node_id=DEFAULT_TARGET_NODE_ID,
                     file_id=transfer.file_id,
-                    chunks_per_step=10 # Process 10 chunks per step for speed
+                    chunks_per_step=10
                 )
 
                 if completed:
                     break
             
-            # This print is useful for seeing the progress on the server side
-            # print(f"Progress for {transfer.file_id}: {chunks_done}/{total_chunks} chunks.")
-            
-        # 4. Finalization and Reporting
         total_time_end = NETWORK.simulation_time
         time_elapsed = total_time_end - initial_time
-        # Convert to Mbps: (Bytes * 8) / (Time * 1024 * 1024)
         simulated_speed_mbps = (file_size_bytes * 8) / (time_elapsed * 1024 * 1024) if time_elapsed > 0 else 0
         
         user_after_upload = NETWORK.get_user_quota_info(user_id)
@@ -279,19 +278,24 @@ class UserServiceSkeleton(cloudsecurity_pb2_grpc.UserServiceServicer):
 
 
 def run():
-    # Set up the gRPC server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     cloudsecurity_pb2_grpc.add_UserServiceServicer_to_server(UserServiceSkeleton(), server)
     
-    # --- FIX HERE: Change binding address to '0.0.0.0:51234' for better compatibility ---
-    # Binding to '0.0.0.0' explicitly uses IPv4 and is often more reliable than '[::]'
     server.add_insecure_port('0.0.0.0:51234')
     
     server.start()
-    print("gRPC GoLocal Virtual Storage Server started on port 51234. Waiting for requests...")
+    print("=" * 60)
+    print("🚀 gRPC GoLocal Virtual Storage Server started on port 51234")
+    print("=" * 60)
+    print("✅ Admin credentials:")
+    print("   Username: Admin")
+    print("   Password: Admin123")
+    print("   Email: thedevelopermax@gmail.com")
+    print("=" * 60)
+    print("Waiting for requests...")
     try:
         while True:
-            time.sleep(86400) # Keep the main thread alive for 24 hours
+            time.sleep(86400)
     except KeyboardInterrupt:
         print("Server shutting down...")
         server.stop(0)

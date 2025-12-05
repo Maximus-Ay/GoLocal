@@ -215,14 +215,6 @@ const Login = ({ onSuccess, onSwitchToSignup }) => {
     }
   };
 
-  // Quick Admin Access for Development
-  const handleQuickAdminAccess = () => {
-    localStorage.setItem('username', 'admin');
-    localStorage.setItem('userRole', 'admin');
-    localStorage.setItem('sessionToken', 'dev-admin-token');
-    onSuccess('admin');
-  };
-
   return (
     <div className="auth-container">
       <div className="app-title">
@@ -256,15 +248,6 @@ const Login = ({ onSuccess, onSwitchToSignup }) => {
         <Button onClick={handleLogin} loading={isLoading} variant="primary">
           Log In
         </Button>
-        
-        {/* Quick Admin Access Button - For Development Only */}
-        <button 
-          onClick={handleQuickAdminAccess}
-          className="quick-admin-btn"
-          title="Quick access to Admin Dashboard (Development Only)"
-        >
-          🔧 Quick Admin Access (Dev)
-        </button>
         
         <div className="auth-footer">
           Don't have an account?{' '}
@@ -327,7 +310,8 @@ const OtpVerification = ({ username, onSuccess, onBack }) => {
       if (response.ok && data.session_token) {
         localStorage.setItem('sessionToken', data.session_token);
         localStorage.setItem('username', username);
-        const isAdmin = username === 'admin';
+        // Check if user is admin (username is "Admin" case-insensitive)
+        const isAdmin = username.toLowerCase() === 'admin';
         localStorage.setItem('userRole', isAdmin ? 'admin' : 'user');
         setStatus({ message: 'Verification successful!', type: 'success' });
         setTimeout(() => onSuccess(isAdmin), 1000);
@@ -381,7 +365,7 @@ const OtpVerification = ({ username, onSuccess, onBack }) => {
         Verify
       </Button>
       
-      <p className="otp-demo-text">Demo OTP: Enter any 6 digits</p>
+      <p className="otp-demo-text">Check your email for the OTP code</p>
       
       <button onClick={onBack} className="otp-back-button">
         ← Back to Login
@@ -578,26 +562,6 @@ const App = () => {
         .btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
-        }
-
-        /* Quick Admin Access Button */
-        .quick-admin-btn {
-          width: 100%;
-          padding: 12px;
-          background: linear-gradient(135deg, #1976d2 0%, #2196f3 100%);
-          color: white;
-          border: none;
-          border-radius: 10px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          margin-top: -10px;
-        }
-
-        .quick-admin-btn:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 15px rgba(33, 150, 243, 0.4);
         }
 
         .link-button {
