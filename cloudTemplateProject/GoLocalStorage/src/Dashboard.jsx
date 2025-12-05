@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Cloud, LogOut, Upload, HardDrive, CreditCard, X, AlertCircle, Edit2, Trash2, Check } from 'lucide-react';
+import CustomDialog from './CustomDialog';
 
 const API_BASE_URL = 'http://localhost:5000';
 
 const Dashboard = ({ username, onLogout }) => {
   const [storageInfo, setStorageInfo] = useState({
     used: 0,
-    total: 2048, // 2GB in MB
+    total: 2048,
     percentage: 0
   });
   const [files, setFiles] = useState([]);
@@ -36,6 +37,16 @@ const Dashboard = ({ username, onLogout }) => {
     country: 'Cameroon'
   });
   
+  // Dialog state
+  const [dialog, setDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    onConfirm: null,
+    showCancel: false
+  });
+  
   const fileInputRef = useRef(null);
 
   const plans = [
@@ -55,10 +66,27 @@ const Dashboard = ({ username, onLogout }) => {
     }
   }, [storageInfo.percentage, showStorageWarning]);
 
+  const showDialog = (config) => {
+    setDialog({
+      isOpen: true,
+      ...config
+    });
+  };
+
+  const closeDialog = () => {
+    setDialog({
+      isOpen: false,
+      title: '',
+      message: '',
+      type: 'info',
+      onConfirm: null,
+      showCancel: false
+    });
+  };
+
   const fetchStorageStatus = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/get-user-quota/${username}`);
-
       const data = await response.json();
       if (response.ok && !data.error) {
         const used = data.used;
@@ -73,7 +101,6 @@ const Dashboard = ({ username, onLogout }) => {
         if (showQuotaExceededModal && total > quotaExceededInfo.available) {
           setShowQuotaExceededModal(false);
         }
-
       } else {
         console.error('Failed to fetch storage status:', data.error || data.result);
       }
@@ -92,12 +119,10 @@ const Dashboard = ({ username, onLogout }) => {
 
       const data = await response.json();
       if (response.ok && data.files) {
-        // Ensure files are sorted by timestamp (newest first)
         const sortedFiles = data.files.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         setFiles(sortedFiles);
       } else {
-         // Handle case where user might have no files
-         setFiles([]);
+        setFiles([]);
       }
     } catch (error) {
       console.error('Failed to fetch files:', error);
@@ -105,22 +130,14 @@ const Dashboard = ({ username, onLogout }) => {
     }
   };
 
-  /**
-   * Generates a unique file name by appending (1), (2), etc.
-   * if a file with the same name already exists in the current file list.
-   * @param {string} fileName The original file name.
-   * @returns {string} The unique file name.
-   */
   const getUniqueFileName = (fileName) => {
     const fileNameParts = fileName.split('.');
-    // Handle files without extensions
     const ext = fileNameParts.length > 1 ? `.${fileNameParts.pop()}` : '';
     const baseName = fileNameParts.join('.');
     
     let newName = fileName;
     let count = 0;
     
-    // Check if the file name already exists
     while (files.some(f => f.name === newName)) {
       count++;
       newName = `${baseName} (${count})${ext}`;
@@ -161,7 +178,6 @@ const Dashboard = ({ username, onLogout }) => {
       return;
     }
 
-    // New Logic: Get a unique file name
     const uniqueFileName = getUniqueFileName(file.name);
 
     setIsUploading(true);
@@ -185,7 +201,7 @@ const Dashboard = ({ username, onLogout }) => {
           command: 'upload_file',
           params: {
             username,
-            file_name: uniqueFileName, // Use the unique name
+            file_name: uniqueFileName,
             file_size_mb: fileSizeMB
           }
         })
@@ -197,9 +213,7 @@ const Dashboard = ({ username, onLogout }) => {
       const data = await response.json();
       
       if (response.ok && data.type !== 'ERROR') {
-        // Optimistic update, but fetchUserFiles is called shortly after for server truth
         const newFile = {
-          // Use a unique ID based on the unique file name to prevent collision issues
           id: `${username}-${uniqueFileName}-${Date.now()}`,
           name: uniqueFileName,
           size: fileSizeMB.toFixed(2),
@@ -209,19 +223,33 @@ const Dashboard = ({ username, onLogout }) => {
         setFiles(prev => [newFile, ...prev]);
         
         setTimeout(async () => {
-          // Fetch server data to ensure consistency and persistence
           await fetchStorageStatus();
           await fetchUserFiles();
           setIsUploading(false);
           setUploadProgress(0);
+          
+          showDialog({
+            title: 'Upload Successful',
+            message: `File "${uniqueFileName}" has been uploaded successfully!`,
+            type: 'success'
+          });
         }, 500);
       } else {
-        alert(data.result || 'Upload failed');
+        showDialog({
+          title: 'Upload Failed',
+          message: data.result || 'Failed to upload file. Please try again.',
+          type: 'error'
+        });
         setIsUploading(false);
         setUploadProgress(0);
       }
     } catch (error) {
       console.error('Upload error:', error);
+      showDialog({
+        title: 'Upload Error',
+        message: 'An error occurred during file upload. Please check your connection and try again.',
+        type: 'error'
+      });
       setIsUploading(false);
       setUploadProgress(0);
     }
@@ -237,86 +265,113 @@ const Dashboard = ({ username, onLogout }) => {
     }
   };
 
-  // Modified: Now calls backend API for persistence and re-fetches files
   const saveFileRename = async () => {
     if (!newFileName.trim()) {
-      alert('File name cannot be empty');
+      showDialog({
+        title: 'Invalid Input',
+        message: 'File name cannot be empty.',
+        type: 'error'
+      });
       return;
     }
     
     const fileToRename = files.find(f => f.id === editingFile);
     if (!fileToRename) return;
 
-    // Use the unique naming helper for the new name as well
     const uniqueNewFileName = getUniqueFileName(newFileName);
 
     try {
-        // ASSUMPTION: This endpoint must be implemented in web_client.py
-        const response = await fetch(`${API_BASE_URL}/api/rename-file`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                username,
-                file_id: editingFile,
-                new_file_name: uniqueNewFileName
-            })
-        });
+      const response = await fetch(`${API_BASE_URL}/api/rename-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          file_id: editingFile,
+          new_file_name: uniqueNewFileName
+        })
+      });
 
-        const data = await response.json();
-        if (response.ok && data.success) {
-            // Re-fetch the files list from the server to get the updated file list (persistence on refresh)
-            await fetchUserFiles();
-            
-            setEditingFile(null);
-            setNewFileName('');
-            alert(`✅ File renamed to "${uniqueNewFileName}" successfully.`);
-        } else {
-            alert(data.error || 'Failed to rename file on server. Ensure /api/rename-file is implemented.');
-        }
+      const data = await response.json();
+      if (response.ok && data.success) {
+        await fetchUserFiles();
+        setEditingFile(null);
+        setNewFileName('');
+        
+        showDialog({
+          title: 'Rename Successful',
+          message: `File renamed to "${uniqueNewFileName}" successfully.`,
+          type: 'success'
+        });
+      } else {
+        showDialog({
+          title: 'Rename Failed',
+          message: data.error || 'Failed to rename file. Please try again.',
+          type: 'error'
+        });
+      }
     } catch (error) {
-        console.error('Rename error:', error);
-        alert('An error occurred during file renaming.');
+      console.error('Rename error:', error);
+      showDialog({
+        title: 'Rename Error',
+        message: 'An error occurred during file renaming.',
+        type: 'error'
+      });
     }
   };
 
-  // Modified: Now calls backend API for persistence and re-fetches files/storage
   const handleDeleteFile = async (fileId) => {
     const file = files.find(f => f.id === fileId);
     if (!file) return;
 
-    if (!confirm(`Are you sure you want to delete "${file.name}"?`)) return;
-    
-    // Optimistic UI update for immediate feedback (will be overwritten by fetch)
-    setFiles(prev => prev.filter(f => f.id !== fileId));
+    showDialog({
+      title: 'Confirm Deletion',
+      message: `Are you sure you want to delete "${file.name}"? This action cannot be undone.`,
+      type: 'confirm',
+      showCancel: true,
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        setFiles(prev => prev.filter(f => f.id !== fileId));
 
-    try {
-        // ASSUMPTION: This endpoint must be implemented in web_client.py
-        const response = await fetch(`${API_BASE_URL}/api/delete-file`, {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/delete-file`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                username,
-                file_id: fileId, // Use unique file ID to delete the correct file
-                file_size_mb: parseFloat(file.size)
+              username,
+              file_id: fileId,
+              file_size_mb: parseFloat(file.size)
             })
-        });
+          });
 
-        const data = await response.json();
-        if (response.ok && data.success) {
-            // Re-fetch data to reflect server-side changes (guaranteed persistence and consistency)
+          const data = await response.json();
+          if (response.ok && data.success) {
             await fetchUserFiles();
             await fetchStorageStatus();
-            alert(`✅ File "${file.name}" deleted successfully.`);
-        } else {
-            // Revert optimistic update if deletion fails
-            await fetchUserFiles(); 
-            alert(data.error || 'Failed to delete file on server. Ensure /api/delete-file is implemented.');
+            
+            showDialog({
+              title: 'File Deleted',
+              message: `File "${file.name}" has been deleted successfully.`,
+              type: 'success'
+            });
+          } else {
+            await fetchUserFiles();
+            showDialog({
+              title: 'Deletion Failed',
+              message: data.error || 'Failed to delete file. Please try again.',
+              type: 'error'
+            });
+          }
+        } catch (error) {
+          console.error('Deletion error:', error);
+          await fetchUserFiles();
+          showDialog({
+            title: 'Deletion Error',
+            message: 'An error occurred during file deletion.',
+            type: 'error'
+          });
         }
-    } catch (error) {
-        console.error('Deletion error:', error);
-        await fetchUserFiles(); // Revert on network error
-        alert('An error occurred during file deletion.');
-    }
+      }
+    });
   };
 
   const handleSelectPlan = (plan) => {
@@ -358,27 +413,46 @@ const Dashboard = ({ username, onLogout }) => {
   };
 
   const handlePayment = async (e) => {
-    e.preventDefault(); // Prevent default form submission
+    e.preventDefault();
 
-    // Validate payment details
     if (!paymentDetails.cardNumber || paymentDetails.cardNumber.replace(/\s/g, '').length !== 16) {
-      alert('Please enter a valid 16-digit card number');
+      showDialog({
+        title: 'Invalid Card Number',
+        message: 'Please enter a valid 16-digit card number.',
+        type: 'error'
+      });
       return;
     }
     if (!paymentDetails.cardName.trim()) {
-      alert('Please enter the cardholder name');
+      showDialog({
+        title: 'Missing Information',
+        message: 'Please enter the cardholder name.',
+        type: 'error'
+      });
       return;
     }
     if (!paymentDetails.expiryDate || paymentDetails.expiryDate.length !== 5) {
-      alert('Please enter expiry date (MM/YY)');
+      showDialog({
+        title: 'Invalid Expiry Date',
+        message: 'Please enter expiry date in MM/YY format.',
+        type: 'error'
+      });
       return;
     }
     if (!paymentDetails.cvv || paymentDetails.cvv.length !== 3) {
-      alert('Please enter a valid 3-digit CVV');
+      showDialog({
+        title: 'Invalid CVV',
+        message: 'Please enter a valid 3-digit CVV.',
+        type: 'error'
+      });
       return;
     }
     if (!paymentDetails.billingAddress.trim()) {
-      alert('Please enter billing address');
+      showDialog({
+        title: 'Missing Address',
+        message: 'Please enter your billing address.',
+        type: 'error'
+      });
       return;
     }
 
@@ -396,10 +470,8 @@ const Dashboard = ({ username, onLogout }) => {
 
       const data = await response.json();
       if (response.ok) {
-        alert(`✅ Payment request submitted successfully!\n\nYou've requested ${selectedPlan.storage}GB for ${selectedPlan.price.toLocaleString()} XAF.\n\nAn admin will approve your request shortly.`);
         setShowPaymentModal(false);
         setShowQuotaExceededModal(false);
-        // Reset payment details
         setPaymentDetails({
           cardNumber: '',
           cardName: '',
@@ -410,12 +482,26 @@ const Dashboard = ({ username, onLogout }) => {
           postalCode: '',
           country: 'Cameroon'
         });
+        
+        showDialog({
+          title: 'Payment Submitted',
+          message: `Payment request submitted successfully!\n\nYou've requested ${selectedPlan.storage}GB for ${selectedPlan.price.toLocaleString()} XAF.\n\nAn admin will approve your request shortly.`,
+          type: 'success'
+        });
       } else {
-        alert(data.result || 'Payment request failed. Please check server logs.');
+        showDialog({
+          title: 'Payment Failed',
+          message: data.result || 'Payment request failed. Please try again.',
+          type: 'error'
+        });
       }
     } catch (error) {
       console.error('Payment request failed:', error);
-      alert('Failed to submit payment request. Please try again.');
+      showDialog({
+        title: 'Payment Error',
+        message: 'Failed to submit payment request. Please check your connection.',
+        type: 'error'
+      });
     }
   };
 
@@ -1166,6 +1252,18 @@ const Dashboard = ({ username, onLogout }) => {
       `}</style>
 
       <div className="dashboard-page">
+        <CustomDialog
+          isOpen={dialog.isOpen}
+          onClose={closeDialog}
+          title={dialog.title}
+          message={dialog.message}
+          type={dialog.type}
+          onConfirm={dialog.onConfirm}
+          showCancel={dialog.showCancel}
+          confirmText={dialog.confirmText}
+          cancelText={dialog.cancelText}
+        />
+
         <header className="dashboard-header">
           <div className="header-left">
             <Cloud size={30} />
@@ -1315,7 +1413,6 @@ const Dashboard = ({ username, onLogout }) => {
           </div>
         </main>
 
-        {/* Upload Progress Modal */}
         {isUploading && (
           <div className="progress-overlay">
             <div className="progress-card">
@@ -1332,7 +1429,6 @@ const Dashboard = ({ username, onLogout }) => {
           </div>
         )}
 
-        {/* Purchase Modal */}
         {showPurchaseModal && (
           <div className="modal">
             <div className="modal-content">
@@ -1369,7 +1465,6 @@ const Dashboard = ({ username, onLogout }) => {
           </div>
         )}
 
-        {/* Quota Exceeded Modal */}
         {showQuotaExceededModal && (
           <div className="modal">
             <div className="modal-content">
@@ -1420,7 +1515,6 @@ const Dashboard = ({ username, onLogout }) => {
           </div>
         )}
 
-        {/* Payment Modal */}
         {showPaymentModal && selectedPlan && (
           <div className="modal">
             <div className="modal-content">

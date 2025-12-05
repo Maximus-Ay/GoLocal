@@ -4,6 +4,7 @@ import {
   Trash2, CheckCircle, XCircle, LogOut, Settings, AlertCircle,
   TrendingUp, HardDrive, Cpu, Wifi
 } from 'lucide-react';
+import CustomDialog from './CustomDialog';
 
 const API_BASE_URL = 'http://localhost:5000';
 
@@ -33,6 +34,18 @@ const AdminDashboard = ({ username, onLogout }) => {
       used_storage: 120,
       cpu_usage: 28,
       uptime: '99.8%'
+    },
+    {
+      node_id: 'node3',
+      cpu_capacity: 6,
+      memory_capacity: 24,
+      storage_capacity: 750,
+      bandwidth: 1500,
+      active: true,
+      health: 'healthy',
+      used_storage: 85,
+      cpu_usage: 42,
+      uptime: '99.7%'
     }
   ]);
   
@@ -47,6 +60,16 @@ const AdminDashboard = ({ username, onLogout }) => {
     bandwidth: 1000
   });
 
+  // Dialog state
+  const [dialog, setDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    onConfirm: null,
+    showCancel: false
+  });
+
   useEffect(() => {
     fetchUsers();
     fetchPaymentRequests();
@@ -56,6 +79,24 @@ const AdminDashboard = ({ username, onLogout }) => {
     }, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  const showDialog = (config) => {
+    setDialog({
+      isOpen: true,
+      ...config
+    });
+  };
+
+  const closeDialog = () => {
+    setDialog({
+      isOpen: false,
+      title: '',
+      message: '',
+      type: 'info',
+      onConfirm: null,
+      showCancel: false
+    });
+  };
 
   const fetchUsers = async () => {
     try {
@@ -83,7 +124,11 @@ const AdminDashboard = ({ username, onLogout }) => {
 
   const handleCreateNode = () => {
     if (!newNode.node_id.trim()) {
-      alert('Please enter a node ID');
+      showDialog({
+        title: 'Invalid Input',
+        message: 'Please enter a node ID before creating the node.',
+        type: 'error'
+      });
       return;
     }
 
@@ -105,7 +150,12 @@ const AdminDashboard = ({ username, onLogout }) => {
       storage_capacity: 500,
       bandwidth: 1000
     });
-    alert('✅ Node created successfully!');
+    
+    showDialog({
+      title: 'Node Created',
+      message: `Node "${node.node_id}" has been successfully created and added to the network!`,
+      type: 'success'
+    });
   };
 
   const handleToggleNode = (nodeId) => {
@@ -115,9 +165,21 @@ const AdminDashboard = ({ username, onLogout }) => {
   };
 
   const handleDeleteNode = (nodeId) => {
-    if (!confirm(`Are you sure you want to delete ${nodeId}?`)) return;
-    setNodes(prev => prev.filter(node => node.node_id !== nodeId));
-    alert('✅ Node deleted successfully!');
+    showDialog({
+      title: 'Confirm Deletion',
+      message: `Are you sure you want to delete "${nodeId}"? This action cannot be undone.`,
+      type: 'confirm',
+      showCancel: true,
+      confirmText: 'Delete',
+      onConfirm: () => {
+        setNodes(prev => prev.filter(node => node.node_id !== nodeId));
+        showDialog({
+          title: 'Node Deleted',
+          message: `Node "${nodeId}" has been successfully removed from the network.`,
+          type: 'success'
+        });
+      }
+    });
   };
 
   const handleApprovePayment = async (request) => {
@@ -132,31 +194,59 @@ const AdminDashboard = ({ username, onLogout }) => {
       });
 
       if (response.ok) {
-        alert(`✅ Payment approved for ${request.username}!\n\n+${request.storage_gb}GB storage added.`);
-        fetchPaymentRequests();
-        fetchUsers();
+        showDialog({
+          title: 'Payment Approved',
+          message: `Payment approved for ${request.username}!\n\n+${request.storage_gb}GB storage has been added to their account.`,
+          type: 'success',
+          onConfirm: () => {
+            fetchPaymentRequests();
+            fetchUsers();
+          }
+        });
       }
     } catch (error) {
       console.error('Failed to approve payment:', error);
-      alert('❌ Failed to approve payment. Please try again.');
+      showDialog({
+        title: 'Approval Failed',
+        message: 'Failed to approve payment. Please try again.',
+        type: 'error'
+      });
     }
   };
 
   const handleRejectPayment = async (requestId) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/reject-payment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_id: requestId })
-      });
+    showDialog({
+      title: 'Confirm Rejection',
+      message: 'Are you sure you want to reject this payment request?',
+      type: 'confirm',
+      showCancel: true,
+      confirmText: 'Reject',
+      onConfirm: async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/admin/reject-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ request_id: requestId })
+          });
 
-      if (response.ok) {
-        alert('Payment request rejected.');
-        fetchPaymentRequests();
+          if (response.ok) {
+            showDialog({
+              title: 'Payment Rejected',
+              message: 'The payment request has been rejected.',
+              type: 'info',
+              onConfirm: fetchPaymentRequests
+            });
+          }
+        } catch (error) {
+          console.error('Failed to reject payment:', error);
+          showDialog({
+            title: 'Rejection Failed',
+            message: 'Failed to reject payment. Please try again.',
+            type: 'error'
+          });
+        }
       }
-    } catch (error) {
-      console.error('Failed to reject payment:', error);
-    }
+    });
   };
 
   const getHealthColor = (health) => {
@@ -533,6 +623,18 @@ const AdminDashboard = ({ username, onLogout }) => {
       `}</style>
 
       <div className="admin-page">
+        <CustomDialog
+          isOpen={dialog.isOpen}
+          onClose={closeDialog}
+          title={dialog.title}
+          message={dialog.message}
+          type={dialog.type}
+          onConfirm={dialog.onConfirm}
+          showCancel={dialog.showCancel}
+          confirmText={dialog.confirmText}
+          cancelText={dialog.cancelText}
+        />
+
         <div className="admin-header">
           <div className="header-left">
             <Settings size={32} />
@@ -758,7 +860,7 @@ const AdminDashboard = ({ username, onLogout }) => {
                           <td><strong>{request.username}</strong></td>
                           <td>+{request.storage_gb} GB</td>
                           <td>{request.price.toLocaleString()} XAF</td>
-                          <td>{new Date(request.date).toLocaleDateString()}</td>
+                          <td>{new Date(request.timestamp).toLocaleDateString()}</td>
                           <td>
                             <div className="action-btns">
                               <button 
@@ -796,7 +898,7 @@ const AdminDashboard = ({ username, onLogout }) => {
                 <label>Node ID</label>
                 <input
                   type="text"
-                  placeholder="e.g., node3"
+                  placeholder="e.g., node4"
                   value={newNode.node_id}
                   onChange={(e) => setNewNode({...newNode, node_id: e.target.value})}
                 />
