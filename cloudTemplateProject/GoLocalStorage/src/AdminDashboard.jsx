@@ -73,12 +73,38 @@ const AdminDashboard = ({ username, onLogout }) => {
   useEffect(() => {
     fetchUsers();
     fetchPaymentRequests();
+    fetchNodesFromBackend();
     const interval = setInterval(() => {
       fetchUsers();
       fetchPaymentRequests();
-    }, 10000);
+      fetchNodesFromBackend();
+    }, 5000); // Refresh every 5 seconds to show chunk updates
     return () => clearInterval(interval);
   }, []);
+
+  const fetchNodesFromBackend = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/get-nodes`);
+      const data = await response.json();
+      if (response.ok && data.nodes) {
+        // Merge backend data with our local node data
+        setNodes(prev => prev.map(node => {
+          const backendNode = data.nodes.find(n => n.node_id === node.node_id);
+          if (backendNode) {
+            return {
+              ...node,
+              chunk_count: backendNode.chunk_count,
+              file_count: backendNode.file_count,
+              stored_files: backendNode.files
+            };
+          }
+          return node;
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to fetch nodes:', error);
+    }
+  };
 
   const showDialog = (config) => {
     setDialog({
@@ -138,10 +164,21 @@ const AdminDashboard = ({ username, onLogout }) => {
       health: 'healthy',
       used_storage: 0,
       cpu_usage: 0,
-      uptime: '100%'
+      uptime: '100%',
+      chunk_count: 0,
+      file_count: 0,
+      stored_files: []
     };
 
     setNodes(prev => [...prev, node]);
+    
+    // Register node in backend
+    fetch(`${API_BASE_URL}/api/admin/add-node`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: newNode.node_id })
+    }).catch(err => console.error('Failed to register node:', err));
+    
     setShowCreateNodeModal(false);
     setNewNode({
       node_id: '',
@@ -162,6 +199,13 @@ const AdminDashboard = ({ username, onLogout }) => {
     setNodes(prev => prev.map(node => 
       node.node_id === nodeId ? { ...node, active: !node.active } : node
     ));
+    
+    // Update backend
+    fetch(`${API_BASE_URL}/api/admin/toggle-node`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId })
+    }).catch(err => console.error('Failed to toggle node:', err));
   };
 
   const handleDeleteNode = (nodeId) => {
@@ -173,6 +217,14 @@ const AdminDashboard = ({ username, onLogout }) => {
       confirmText: 'Delete',
       onConfirm: () => {
         setNodes(prev => prev.filter(node => node.node_id !== nodeId));
+        
+        // Update backend
+        fetch(`${API_BASE_URL}/api/admin/delete-node`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ node_id: nodeId })
+        }).catch(err => console.error('Failed to delete node:', err));
+        
         showDialog({
           title: 'Node Deleted',
           message: `Node "${nodeId}" has been successfully removed from the network.`,
@@ -770,6 +822,15 @@ const AdminDashboard = ({ username, onLogout }) => {
                         >
                           {node.health.toUpperCase()}
                         </span>
+                      </div>
+
+                      <div className="stat-row" style={{ background: '#e3f2fd', margin: '10px -10px -10px', padding: '15px', borderRadius: '0 0 12px 12px' }}>
+                        <div className="stat-label" style={{ color: '#1565c0', fontWeight: 700 }}>
+                          📦 File Chunks
+                        </div>
+                        <div className="stat-value" style={{ color: '#1565c0', fontSize: '20px' }}>
+                          {node.chunk_count || 0}
+                        </div>
                       </div>
                     </div>
                   </div>
