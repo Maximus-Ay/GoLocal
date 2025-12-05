@@ -134,7 +134,10 @@ simulation_time += transfer_time
 
 ### 1. Backend (gRPC)
 ```bash
+
 `python cloud.py`
+```
+
 ### 2. API Gateway (Flask)
 `python web_client.py`
 ### 3. Frontend
